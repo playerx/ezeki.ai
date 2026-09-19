@@ -10,8 +10,8 @@ body {
   display: grid;
   place-items: center;
   font-family: system-ui, sans-serif;
-  background: #f6f6f7;
-  color: #1a1a1a;
+  background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+  color: #f6f6f7;
 }
 
 h1 {
