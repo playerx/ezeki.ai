@@ -1,3 +1,3 @@
 import './style.css';
 
-document.querySelector('#app').innerHTML = '<h1>Hello, AI World!</h1>';
+document.querySelector('#app').innerHTML = '<h1>Hi Gurami</h1>';
