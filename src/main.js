@@ -233,8 +233,8 @@ function renderPickupStep() {
       <div class="field"><label for="p-area">Area <span class="small">(shown on the listing)</span></label><input id="p-area" name="area" required maxlength="60" placeholder="Neighbourhood or postcode" value="${esc(p.area)}" /></div>
       <div class="field"><label for="p-address">Pickup address <span class="small">(only shared once a pickup is confirmed)</span></label><input id="p-address" name="address" required maxlength="120" placeholder="Street address" value="${esc(p.address)}" /></div>
       <div class="field"><label>When are you usually around?</label>${grid}</div>
-      <div class="field"><label for="p-notes">Pickup notes</label><input id="p-notes" name="notes" maxlength="200" placeholder="Porch pickup, buzz apt 3, heavy&hellip;" value="${esc(p.notes)}" /></div>
       <label class="check"><input type="checkbox" id="p-remember" ${p.remember ? 'checked' : ''} /> Remember area, address and availability for next time</label>
+      <div class="field"><label for="p-notes">Pickup notes</label><input id="p-notes" name="notes" maxlength="200" placeholder="Porch pickup, buzz apt 3, heavy&hellip;" value="${esc(p.notes)}" /></div>
       ${s.error ? `<div class="notice error">${esc(s.error)}</div>` : ''}
       <div class="sticky-actions"><button class="btn primary" type="submit" id="post-btn">Post for free</button></div>
     </form>
