@@ -367,7 +367,7 @@ function renderReviewStep() {
         <div class="pickup">
           <div><strong>Pickup in ${esc(p.area)}</strong><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
           <div class="chips">${p.availability.map((slot) => `<span class="tag">${esc(slotLabel(slot))}</span>`).join('')}</div>
-          ${p.notes ? `<div>${esc(p.notes)}</div>` : ''}
+          ${p.notes ? `<div class="notes">${esc(p.notes)}</div>` : ''}
           <div class="private">Address, kept private: ${esc(p.address)}</div>
           <a class="edit-link" href="#" data-goto="pickup">Edit pickup</a>
         </div>
@@ -421,7 +421,7 @@ function pickupBlock(l) {
     <div class="pickup">
       <div><strong>Pickup in ${esc(p.area)}</strong> <a class="map-link" href="${mapUrl(p.area)}" target="_blank" rel="noopener">map</a><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
       <div class="chips">${p.availability.map((slot) => `<span class="tag">${esc(slotLabel(slot))}</span>`).join('')}</div>
-      ${notes ? `<div>${esc(notes)}</div>` : ''}
+      ${notes ? `<div class="notes">${esc(notes)}</div>` : ''}
     </div>`;
 }
 

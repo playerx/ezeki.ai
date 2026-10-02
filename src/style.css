@@ -188,3 +188,4 @@ input[type="file"] { display: none; }
 .field textarea.desc { min-height: 96px; }
 .private { color: var(--muted); font-size: 13px; }
 .map-link { font-size: 13px; color: var(--accent); }
+.notes { white-space: pre-wrap; }
