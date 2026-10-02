@@ -1,2 +1,7 @@
 node_modules
 dist
+tests/screens/
+.env
+.env.*
+server/.env
+server/.env.*
