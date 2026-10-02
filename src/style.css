@@ -199,3 +199,18 @@ input[type="file"] { display: none; }
 }
 .map { position: relative; z-index: 0; height: 180px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--line); }
 .hint { font-size: 13px; color: var(--muted); }
+
+/* Persona switch, claims, check-in */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--card); }
+.seg button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.claim-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 10px; background: #e4f2ea; color: #143f2b; }
+.claim-card.muted { background: var(--card); border: 1px solid var(--line); color: var(--ink); }
+.claim-card h3 { margin: 0; font-size: 16px; }
+.claim-card .addr { font-size: 18px; font-weight: 700; }
+.windows { display: flex; flex-direction: column; gap: 6px; }
+.windows button { text-align: left; font: inherit; font-size: 15px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); cursor: pointer; }
+.windows button[aria-pressed="true"] { border-color: var(--accent); background: #e4f2ea; color: var(--accent); font-weight: 600; }
+.queue { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+.badge.warn { background: #fff4d6; color: #6b4e00; }
+.badge.done { background: var(--line); color: var(--muted); }

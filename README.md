@@ -25,14 +25,34 @@ the shell wins over the file. Without any key the app still runs, but the AI
 draft step returns an empty form with a notice and you fill in the listing
 yourself.
 
+## Claiming (Phase 2)
+
+There are no accounts yet, so a **Giving / Finding** switch in the header
+lets one phone play both sides. Finders see open listings, pick a concrete
+pickup window from the giver's availability over the next week, leave a
+one-line message, and confirm. First come, first served: the first claim is
+accepted automatically and the finder sees the address and notes; later
+claims queue as a waitlist and are promoted automatically if the giver or the
+finder cancels, or on a no-show. After the window passes both sides get a
+"did it happen?" check-in: a yes from either side closes the listing, a no
+records a no-show against the other side and reopens it for the next in
+line. With no answer for a day the claim lapses the same way. Reminders are
+in-app banners on home ("pickup today", "check in").
+
+For tests, `localStorage['giveaway.clock']` pins "now".
+
 ## Layout
 
 - `src/` - Vite frontend, plain JS, hash-routed. Listings live in `localStorage`.
+  `main.js` routes and renders home and listing pages, `flow.js` is the
+  post/edit flow, `claims.js` is the claim loop as pure functions, `map.js`
+  wraps Leaflet and the geocoder, `util.js` holds shared helpers.
 - `server/index.js` - Express API on port 3001. Holds the Claude key and
   serves `POST /api/draft` (photos in, structured listing draft out),
   `GET /api/geocode` (area lookup) and `GET /api/health`. Vite proxies `/api` to it.
-- `tests/phase1.mjs` - Playwright walkthrough of photo -> draft -> edit -> post.
-  Run with `npm test` while the dev servers are up.
+- `tests/phase1.mjs` - Playwright walkthrough of posting, editing, resume.
+  `tests/phase2.mjs` - the claim loop. Run both with `npm test` while the dev
+  servers are up.
 
 ## Listing shape
 
@@ -56,7 +76,9 @@ caches Nominatim and biases results to the browser's locale country. Before
 real traffic, switch tiles and geocoding to a provider with a usage agreement.
 
 `price: null` means free; the MVP never sets a price. `status` is one of
-`listed`, `requested`, `accepted`, `completed`, `cancelled`. Later phases
+`listed`, `claimed`, `completed`, `cancelled`. `requests` holds every claim
+(`{ id, meId, name, message, when: { date, part }, status, ... }`) with status
+`accepted`, `waiting`, `cancelled`, `completed` or `no_show`. Later phases
 (claims, pickup slots, accounts, reminders) hang off these two fields.
 
 The AI draft also returns `isPhotoOfItem`. When false (drawing, screenshot,
