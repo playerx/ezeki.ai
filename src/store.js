@@ -38,6 +38,11 @@ export function getListing(id) {
   return loadListings().find((l) => l.id === id) || null;
 }
 
+export function deleteListing(id) {
+  const all = loadListings().filter((l) => l.id !== id);
+  localStorage.setItem(KEY, JSON.stringify(all));
+}
+
 export function newListing(fields) {
   return {
     id: crypto.randomUUID(),
@@ -70,4 +75,27 @@ export function saveGiverDefaults(defaults) {
   } catch {
     // Defaults are a convenience; never block posting on them.
   }
+}
+
+// In-progress listing drafts, so a refresh or a detour to another screen
+// doesn't lose work. Best effort: if the draft is too big to store we carry
+// on in memory rather than block the user.
+export function loadDraft(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveDraft(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // quota or private mode; keep going in memory
+  }
+}
+
+export function clearDraft(key) {
+  localStorage.removeItem(key);
 }

@@ -36,14 +36,20 @@ yourself.
 
 ## Listing shape
 
-Posting is three steps: photos, check the details, pickup. The pickup step
+Posting is four steps: photos, check the details, pickup, review. Progress is
+saved in the browser as you go, so a refresh or a detour to another screen
+resumes where you left off (home shows a resume banner). Listings can be
+edited or removed from their page; with no accounts yet, every listing in a
+browser belongs to that giver. The pickup step
 asks for a public area, a private street address, availability windows (day
 by morning, afternoon, evening) and notes. Area, address and availability are
 remembered as giver defaults for the next listing.
 
 `pickup` is `{ area, address, availability, notes }`. `address` is never shown
 on the listing; it will be revealed to a recipient once a pickup is confirmed.
-`availability` is a list of slots like `mon-eve` or `sat-am`.
+`availability` is a list of slots like `mon-eve` or `sat-am`. The listing
+page links the area to an OpenStreetMap search; a proper map comes with the
+server phase.
 
 `price: null` means free; the MVP never sets a price. `status` is one of
 `listed`, `requested`, `accepted`, `completed`, `cancelled`. Later phases

@@ -174,3 +174,17 @@ input[type="file"] { display: none; }
 .check input { width: 18px; height: 18px; }
 .small { font-size: 13px; }
 .pickup { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+
+/* Resume banner, review step, edit actions */
+.banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; background: #fff4d6; color: #6b4e00; font-size: 14px; }
+.banner span { flex: 1; }
+.banner a, .banner button { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.edit-link { font-size: 14px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.review-head { display: flex; justify-content: space-between; align-items: baseline; }
+.actions-row { display: flex; gap: 10px; }
+.actions-row .btn { flex: 1; }
+.btn.danger { color: var(--danger); }
+.field textarea { min-height: 56px; overflow: hidden; }
+.field textarea.desc { min-height: 96px; }
+.private { color: var(--muted); font-size: 13px; }
+.map-link { font-size: 13px; color: var(--accent); }
