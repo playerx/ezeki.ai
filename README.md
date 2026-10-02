@@ -36,6 +36,15 @@ yourself.
 
 ## Listing shape
 
+Posting is three steps: photos, check the details, pickup. The pickup step
+asks for a public area, a private street address, availability windows (day
+by morning, afternoon, evening) and notes. Area, address and availability are
+remembered as giver defaults for the next listing.
+
+`pickup` is `{ area, address, availability, notes }`. `address` is never shown
+on the listing; it will be revealed to a recipient once a pickup is confirmed.
+`availability` is a list of slots like `mon-eve` or `sat-am`.
+
 `price: null` means free; the MVP never sets a price. `status` is one of
 `listed`, `requested`, `accepted`, `completed`, `cancelled`. Later phases
 (claims, pickup slots, accounts, reminders) hang off these two fields.

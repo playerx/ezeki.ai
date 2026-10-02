@@ -44,27 +44,68 @@ try {
   await page.fill('#f-desc', 'Solid oak chair, one small scratch on the back leg.');
   await page.selectOption('#f-cat', 'furniture');
   await page.selectOption('#f-cond', 'good');
-  await page.fill('#f-pickup', 'Porch pickup, any evening');
+  await page.getByRole('button', { name: 'Next: pickup' }).click();
+
+  // Pickup step: public area, private address, availability windows, notes.
+  await page.locator('#pickup-form').waitFor();
+  await page.fill('#p-area', 'Bernal Heights');
+  await page.fill('#p-address', '123 Example St');
+  await page.fill('#p-notes', 'Porch pickup, any evening');
+  // Posting with no window selected must be refused.
+  await page.getByRole('button', { name: 'Post for free' }).click();
+  await page.getByText('Pick at least one time window').waitFor();
+  await page.locator('[data-slot="mon-eve"]').click();
+  await page.locator('[data-slot="sat-am"]').click();
+  // Back to details and forward again must keep what was typed.
+  await page.locator('#back-link').click();
+  await page.locator('#edit-form').waitFor();
+  if ((await page.inputValue('#f-title')) !== 'Wooden dining chair') throw new Error('details lost on Back');
+  await page.getByRole('button', { name: 'Next: pickup' }).click();
+  await page.locator('#pickup-form').waitFor();
+  if ((await page.inputValue('#p-area')) !== 'Bernal Heights') throw new Error('pickup fields lost on Back');
+  if ((await page.locator('.chip[aria-pressed="true"]').count()) !== 2) throw new Error('availability lost on Back');
 
   await page.getByRole('button', { name: 'Post for free' }).click();
   await page.waitForURL(/#\/listing\//);
   await page.getByRole('heading', { name: 'Wooden dining chair' }).waitFor();
   const price = await page.locator('.detail .price').textContent();
   if (price.trim() !== 'Free') throw new Error(`expected Free, got ${price}`);
+  const pageText = await page.locator('main').textContent();
+  if (!pageText.includes('Pickup in Bernal Heights')) throw new Error('area missing from listing');
+  if (!pageText.includes('Mon evening') || !pageText.includes('Sat morning')) throw new Error('availability missing from listing');
+  if (pageText.includes('123 Example St')) throw new Error('private address leaked onto the listing page');
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('giveaway.listings')));
   if (stored.length !== 1 || stored[0].price !== null || stored[0].status !== 'listed') {
     throw new Error('stored listing has wrong shape: ' + JSON.stringify(stored[0], null, 2).slice(0, 300));
   }
+  const pk = stored[0].pickup;
+  if (!pk || pk.area !== 'Bernal Heights' || pk.address !== '123 Example St' || pk.availability.length !== 2 || pk.notes !== 'Porch pickup, any evening') {
+    throw new Error('stored pickup has wrong shape: ' + JSON.stringify(pk));
+  }
+  const giver = await page.evaluate(() => JSON.parse(localStorage.getItem('giveaway.giver')));
+  if (!giver || giver.area !== 'Bernal Heights' || giver.availability.length !== 2) throw new Error('giver defaults not saved');
+
+  // Second listing via the manual path: pickup step must be prefilled from the defaults.
+  await page.goto(BASE + '/#/new');
+  await page.setInputFiles('#photo-input', { name: 'lamp.jpg', mimeType: 'image/jpeg', buffer: JPEG });
+  await page.getByRole('button', { name: 'Fill in the details myself' }).click();
+  await page.fill('#f-title', 'Desk lamp');
+  await page.getByRole('button', { name: 'Next: pickup' }).click();
+  await page.locator('#pickup-form').waitFor();
+  if ((await page.inputValue('#p-area')) !== 'Bernal Heights') throw new Error('area not prefilled from defaults');
+  if ((await page.inputValue('#p-address')) !== '123 Example St') throw new Error('address not prefilled from defaults');
+  if ((await page.locator('.chip[aria-pressed="true"]').count()) !== 2) throw new Error('availability not prefilled from defaults');
 
   await page.goto(BASE + '/#/');
   await page.getByText('Wooden dining chair').waitFor();
+  await page.getByText('Bernal Heights').first().waitFor();
 
   fs.mkdirSync('tests/screens', { recursive: true });
   await page.screenshot({ path: 'tests/screens/home.png' });
   await page.getByText('Wooden dining chair').click();
   await page.screenshot({ path: 'tests/screens/listing.png', fullPage: true });
-  console.log('PASS: photo -> manual/back -> draft -> edit -> post -> listing');
+  console.log('PASS: photo -> manual/back -> draft -> details -> pickup -> post -> listing, defaults prefilled');
 } catch (err) {
   console.error('FAIL:', err.message);
   await page.screenshot({ path: 'tests/screens/failure.png', fullPage: true }).catch(() => {});

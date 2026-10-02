@@ -1,10 +1,23 @@
 import './style.css';
-import { loadListings, saveListing, getListing, newListing, StorageFullError } from './store.js';
+import { loadListings, saveListing, getListing, newListing, StorageFullError, loadGiverDefaults, saveGiverDefaults } from './store.js';
 import { fileToDataUrl, shrinkForStorage, dataUrlToApiImage } from './photos.js';
 
 const CATEGORIES = ['furniture', 'kitchen', 'electronics', 'clothing', 'books', 'kids', 'garden', 'tools', 'sports', 'decor', 'other'];
 const CONDITIONS = ['like new', 'good', 'fair', 'worn'];
 const MAX_PHOTOS = 3;
+const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+const PARTS = [['am', 'Morning', '8–12'], ['pm', 'Afternoon', '12–5'], ['eve', 'Evening', '5–9']];
+
+function slotLabel(slot) {
+  const [d, p] = slot.split('-');
+  const day = DAYS.find(([k]) => k === d)?.[1] ?? d;
+  const part = PARTS.find(([k]) => k === p)?.[1]?.toLowerCase() ?? p;
+  return `${day} ${part}`;
+}
+
+function pickupNotesOf(l) {
+  return l.pickup?.notes ?? l.pickupNotes ?? '';
+}
 
 const app = document.querySelector('#app');
 
@@ -49,7 +62,7 @@ function renderHome() {
           <img src="${l.photos[0] || ''}" alt="" />
           <div>
             <div class="title">${esc(l.title || 'Untitled')}</div>
-            <div class="meta">Free &middot; ${esc(l.condition)} &middot; <span class="badge${l.status === 'listed' ? '' : ' muted'}">${esc(l.status)}</span></div>
+            <div class="meta">Free &middot; ${esc(l.condition)}${l.pickup?.area ? ' &middot; ' + esc(l.pickup.area) : ''} &middot; <span class="badge${l.status === 'listed' ? '' : ' muted'}">${esc(l.status)}</span></div>
           </div>
         </a>`).join('<hr class="row-sep">')
     : `<div class="empty">Nothing listed yet.<br>Give something away to get started.</div>`;
@@ -62,15 +75,17 @@ function renderHome() {
 
 // ---------- New listing ----------
 const emptyDraft = () => ({ title: '', description: '', category: 'other', condition: 'good', pickupHints: [], isPhotoOfItem: true });
-const draftState = { photos: [], draft: null, manual: false, serverStub: false, error: null, working: false };
+const freshState = () => ({ step: 'photo', photos: [], draft: null, details: null, pickup: null, manual: false, serverStub: false, error: null, working: false });
+const draftState = freshState();
 
 function resetDraft() {
-  Object.assign(draftState, { photos: [], draft: null, manual: false, serverStub: false, error: null, working: false });
+  Object.assign(draftState, freshState());
 }
 
 function renderNew() {
-  if (!draftState.draft) return renderPhotoStep();
-  return renderEditStep();
+  if (draftState.step === 'pickup') return renderPickupStep();
+  if (draftState.step === 'edit') return renderEditStep();
+  return renderPhotoStep();
 }
 
 function renderPhotoStep() {
@@ -107,6 +122,7 @@ function renderPhotoStep() {
   document.querySelector('#manual-btn')?.addEventListener('click', () => {
     s.draft = emptyDraft();
     s.manual = true;
+    s.step = 'edit';
     s.error = null;
     renderNew();
   });
@@ -128,6 +144,7 @@ async function requestDraft() {
     s.draft = body.draft;
     s.serverStub = Boolean(body.stub);
     s.manual = false;
+    s.step = 'edit';
   } catch (err) {
     s.error = `${err.message}. You can try again or fill in the details yourself.`;
   } finally {
@@ -150,11 +167,10 @@ function editNotice(s, d) {
 
 function renderEditStep() {
   const s = draftState;
-  const d = s.draft;
-  const hints = (d.pickupHints || []).join('. ');
+  const d = s.details ? { ...s.draft, ...s.details } : s.draft;
 
   layout('Check the details', `
-    ${editNotice(s, d)}
+    ${editNotice(s, s.draft)}
     <div class="photo-grid">${s.photos.map((p) => `<img src="${p}" alt="" />`).join('')}</div>
     <form id="edit-form" style="display:contents">
       <div class="field"><label for="f-title">Title</label><input id="f-title" name="title" required maxlength="80" value="${esc(d.title)}" /></div>
@@ -163,47 +179,123 @@ function renderEditStep() {
         <div class="field"><label for="f-cat">Category</label><select id="f-cat" name="category">${options(CATEGORIES, d.category)}</select></div>
         <div class="field"><label for="f-cond">Condition</label><select id="f-cond" name="condition">${options(CONDITIONS, d.condition)}</select></div>
       </div>
-      <div class="field"><label for="f-pickup">Pickup notes</label><input id="f-pickup" name="pickupNotes" placeholder="Porch pickup, buzz apt 3, heavy&hellip;" value="${esc(hints)}" /></div>
-      ${s.error ? `<div class="notice error">${esc(s.error)}</div>` : ''}
-      <div class="sticky-actions"><button class="btn primary" type="submit" id="post-btn">Post for free</button></div>
+      <div class="sticky-actions"><button class="btn primary" type="submit">Next: pickup</button></div>
     </form>
-  `, { back: () => { s.draft = null; s.error = null; renderNew(); } });
+  `, { back: () => { s.step = 'photo'; s.error = null; renderNew(); } });
 
   document.querySelector('#retake-btn')?.addEventListener('click', () => {
-    Object.assign(s, { draft: null, photos: [], error: null });
+    Object.assign(s, { step: 'photo', draft: null, details: null, photos: [], error: null });
     renderNew();
   });
 
-  document.querySelector('#edit-form').addEventListener('submit', async (e) => {
+  document.querySelector('#edit-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
+    s.details = {
+      title: f.get('title').trim(),
+      description: f.get('description').trim(),
+      category: f.get('category'),
+      condition: f.get('condition'),
+    };
+    s.step = 'pickup';
+    renderNew();
+  });
+}
+
+// Step 3: where and when. Area is public, the exact address is only shared once
+// a pickup is confirmed (next slice). Availability windows are what a recipient
+// will pick a slot from.
+function renderPickupStep() {
+  const s = draftState;
+  if (!s.pickup) {
+    const defaults = loadGiverDefaults() || {};
+    s.pickup = {
+      area: defaults.area || '',
+      address: defaults.address || '',
+      availability: Array.isArray(defaults.availability) ? [...defaults.availability] : [],
+      notes: (s.draft.pickupHints || []).join('. '),
+      remember: true,
+    };
+  }
+  const p = s.pickup;
+  const grid = `
+    <div class="avail" role="group" aria-label="Pickup availability">
+      <span></span>${PARTS.map(([, name, hours]) => `<span class="hd">${name}<br>${hours}</span>`).join('')}
+      ${DAYS.map(([dk, dname]) => `<span class="day">${dname}</span>` + PARTS.map(([pk]) => {
+        const slot = `${dk}-${pk}`;
+        return `<button type="button" class="chip" data-slot="${slot}" aria-pressed="${p.availability.includes(slot)}" aria-label="${dname} ${pk}">${p.availability.includes(slot) ? '&#10003;' : ''}</button>`;
+      }).join('')).join('')}
+    </div>`;
+
+  layout('Pickup', `
+    <p class="muted">Where and when can someone collect it?</p>
+    <form id="pickup-form" style="display:contents">
+      <div class="field"><label for="p-area">Area <span class="small">(shown on the listing)</span></label><input id="p-area" name="area" required maxlength="60" placeholder="Neighbourhood or postcode" value="${esc(p.area)}" /></div>
+      <div class="field"><label for="p-address">Pickup address <span class="small">(only shared once a pickup is confirmed)</span></label><input id="p-address" name="address" required maxlength="120" placeholder="Street address" value="${esc(p.address)}" /></div>
+      <div class="field"><label>When are you usually around?</label>${grid}</div>
+      <div class="field"><label for="p-notes">Pickup notes</label><input id="p-notes" name="notes" maxlength="200" placeholder="Porch pickup, buzz apt 3, heavy&hellip;" value="${esc(p.notes)}" /></div>
+      <label class="check"><input type="checkbox" id="p-remember" ${p.remember ? 'checked' : ''} /> Remember area, address and availability for next time</label>
+      ${s.error ? `<div class="notice error">${esc(s.error)}</div>` : ''}
+      <div class="sticky-actions"><button class="btn primary" type="submit" id="post-btn">Post for free</button></div>
+    </form>
+  `, { back: () => { capturePickupForm(); s.step = 'edit'; s.error = null; renderNew(); } });
+
+  document.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = on ? '&#10003;' : '';
+  }));
+
+  function capturePickupForm() {
+    p.area = document.querySelector('#p-area').value.trim();
+    p.address = document.querySelector('#p-address').value.trim();
+    p.notes = document.querySelector('#p-notes').value.trim();
+    p.remember = document.querySelector('#p-remember').checked;
+    p.availability = Array.from(document.querySelectorAll('.chip[aria-pressed="true"]')).map((b) => b.dataset.slot);
+  }
+
+  document.querySelector('#pickup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    capturePickupForm();
+    if (p.availability.length === 0) {
+      s.error = 'Pick at least one time window so people know when they can collect.';
+      return renderNew();
+    }
     const btn = document.querySelector('#post-btn');
     btn.disabled = true;
     btn.textContent = 'Posting…';
     try {
       const listing = newListing({
         photos: await Promise.all(s.photos.map(shrinkForStorage)),
-        title: f.get('title').trim(),
-        description: f.get('description').trim(),
-        category: f.get('category'),
-        condition: f.get('condition'),
-        pickupNotes: f.get('pickupNotes').trim(),
+        ...s.details,
+        pickup: { area: p.area, address: p.address, availability: p.availability, notes: p.notes },
         price: null,
-        aiDraft: s.manual || s.serverStub ? null : d,
+        aiDraft: s.manual || s.serverStub ? null : s.draft,
       });
       saveListing(listing);
+      if (p.remember) saveGiverDefaults({ area: p.area, address: p.address, availability: p.availability });
       resetDraft();
       location.hash = `#/listing/${listing.id}`;
     } catch (err) {
       s.error = err instanceof StorageFullError ? err.message : `Could not save the listing: ${err.message}`;
-      // Keep what the user typed: re-render with their edits as the draft.
-      s.draft = { ...d, title: f.get('title'), description: f.get('description'), category: f.get('category'), condition: f.get('condition'), pickupHints: [f.get('pickupNotes')] };
       renderNew();
     }
   });
 }
 
 // ---------- Listing detail ----------
+function pickupBlock(l) {
+  const p = l.pickup;
+  const notes = pickupNotesOf(l);
+  if (!p) return notes ? `<div><strong>Pickup:</strong> ${esc(notes)}</div>` : '';
+  return `
+    <div class="pickup">
+      <div><strong>Pickup in ${esc(p.area)}</strong><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
+      <div class="chips">${p.availability.map((slot) => `<span class="tag">${esc(slotLabel(slot))}</span>`).join('')}</div>
+      ${notes ? `<div>${esc(notes)}</div>` : ''}
+    </div>`;
+}
+
 function renderListing(id) {
   const l = getListing(id);
   if (!l) return layout('Not found', `<div class="empty">That listing doesn't exist.</div>`, { back: '#/' });
@@ -217,7 +309,7 @@ function renderListing(id) {
         <h2>${esc(l.title)}</h2>
         <div class="kv"><span class="badge">${esc(l.status)}</span><span>${esc(l.category)}</span><span>&middot;</span><span>${esc(l.condition)}</span><span>&middot;</span><span>posted ${timeAgo(l.createdAt)}</span></div>
         <p>${esc(l.description)}</p>
-        ${l.pickupNotes ? `<div><strong>Pickup:</strong> ${esc(l.pickupNotes)}</div>` : ''}
+        ${pickupBlock(l)}
       </div>
     </div>
     <a class="btn ghost" href="#/">Done</a>

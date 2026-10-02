@@ -1,4 +1,5 @@
 const KEY = 'giveaway.listings';
+const GIVER_KEY = 'giveaway.giver';
 
 export class StorageFullError extends Error {
   constructor() {
@@ -45,10 +46,28 @@ export function newListing(fields) {
     description: '',
     category: 'other',
     condition: 'good',
-    pickupNotes: '',
+    pickup: null, // { area, address, availability: ['mon-eve', ...], notes }; address is private
     price: null, // null = free; paid listings are not in the MVP
     status: 'listed', // listed | requested | accepted | completed | cancelled
     createdAt: new Date().toISOString(),
     ...fields,
   };
+}
+
+// Giver defaults: area, address and availability remembered from the last
+// listing so the Pickup step is prefilled next time.
+export function loadGiverDefaults() {
+  try {
+    return JSON.parse(localStorage.getItem(GIVER_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveGiverDefaults(defaults) {
+  try {
+    localStorage.setItem(GIVER_KEY, JSON.stringify(defaults));
+  } catch {
+    // Defaults are a convenience; never block posting on them.
+  }
 }
