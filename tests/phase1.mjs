@@ -18,6 +18,14 @@ const page = await context.newPage();
 page.on('pageerror', (e) => { console.error('PAGE ERROR', e); process.exitCode = 1; });
 const must = (cond, msg) => { if (!cond) throw new Error(msg); };
 
+// Keep the test offline: stub the geocoder and map tiles.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+await page.route('**/api/geocode**', (route) => route.fulfill({ json: [
+  { label: 'Bernal Heights, San Francisco, California', lat: 37.7389, lon: -122.4152 },
+  { label: 'Bernal Heights, Hugo, Colorado', lat: 39.1, lon: -103.5 },
+] }));
+await page.route('https://tile.openstreetmap.org/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }));
+
 try {
   await page.goto(BASE + '/#/');
   await page.getByRole('link', { name: 'Give something away' }).click();
@@ -52,6 +60,12 @@ try {
   // Pickup step: public area, private address, availability windows, notes.
   await page.locator('#pickup-form').waitFor();
   await page.fill('#p-area', 'Bernal Heights');
+  // Suggestions appear, picking one pins the area and shows the map.
+  await page.locator('#area-suggest button').first().waitFor();
+  must((await page.locator('#area-suggest button').count()) === 2, 'expected two suggestions');
+  await page.locator('#area-suggest button').first().click();
+  await page.locator('#area-map.leaflet-container').waitFor();
+  must((await page.inputValue('#p-area')) === 'Bernal Heights, San Francisco, California', 'area not set from suggestion');
   await page.fill('#p-address', '123 Example St');
   await page.fill('#p-notes', 'Porch pickup, any evening');
   await page.getByRole('button', { name: 'Next: review' }).click();
@@ -63,7 +77,8 @@ try {
   await page.waitForTimeout(500); // debounced persist
   await page.reload();
   await page.locator('#pickup-form').waitFor();
-  must((await page.inputValue('#p-area')) === 'Bernal Heights', 'area lost on reload');
+  must((await page.inputValue('#p-area')).startsWith('Bernal Heights'), 'area lost on reload');
+  await page.locator('#area-map.leaflet-container').waitFor();
   must((await page.inputValue('#p-notes')) === 'Porch pickup, any evening', 'notes lost on reload');
   must((await page.locator('.chip[aria-pressed="true"]').count()) === 2, 'availability lost on reload');
 
@@ -73,13 +88,14 @@ try {
   must((await page.inputValue('#f-title')) === 'Wooden dining chair', 'details lost on Back');
   await page.getByRole('button', { name: 'Next: pickup' }).click();
   await page.locator('#pickup-form').waitFor();
-  must((await page.inputValue('#p-area')) === 'Bernal Heights', 'pickup fields lost on Back');
+  must((await page.inputValue('#p-area')).startsWith('Bernal Heights'), 'pickup fields lost on Back');
   await page.getByRole('button', { name: 'Next: review' }).click();
 
   // Review step shows everything including the private address, then lists it.
   await page.locator('#review').waitFor();
   const review = await page.locator('main').textContent();
-  must(review.includes('Wooden dining chair') && review.includes('Bernal Heights') && review.includes('123 Example St'), 'review missing content');
+  must(review.includes('Wooden dining chair') && review.includes('Bernal Heights') && review.includes('private until a pickup is confirmed: 123 Example St'), 'review missing content');
+  await page.locator('#review-map.leaflet-container').waitFor();
   await page.getByRole('button', { name: 'List it' }).click();
   await page.waitForURL(/#\/listing\/[^/]+$/);
   await page.getByRole('heading', { name: 'Wooden dining chair' }).waitFor();
@@ -88,14 +104,16 @@ try {
   must(pageText.includes('Pickup in Bernal Heights'), 'area missing from listing');
   must(pageText.includes('Mon evening') && pageText.includes('Sat morning'), 'availability missing from listing');
   must(!pageText.includes('123 Example St'), 'private address leaked onto the listing page');
-  must((await page.locator('a.map-link').getAttribute('href')).includes('Bernal%20Heights'), 'map link missing');
+  await page.locator('#listing-map.leaflet-container').waitFor();
+  must((await page.locator('a.map-link').getAttribute('href')).includes('mlat=37.7389'), 'map link should point at the area centroid');
 
   let stored = await page.evaluate(() => JSON.parse(localStorage.getItem('giveaway.listings')));
   must(stored.length === 1 && stored[0].price === null && stored[0].status === 'listed', 'stored listing has wrong shape');
   const pk = stored[0].pickup;
-  must(pk && pk.area === 'Bernal Heights' && pk.address === '123 Example St' && pk.availability.length === 2 && pk.notes === 'Porch pickup, any evening', 'stored pickup wrong: ' + JSON.stringify(pk));
+  must(pk && pk.area.startsWith('Bernal Heights') && pk.address === '123 Example St' && pk.availability.length === 2 && pk.notes === 'Porch pickup, any evening', 'stored pickup wrong: ' + JSON.stringify(pk));
+  must(pk.location && Math.abs(pk.location.lat - 37.7389) < 1e-6, 'stored location wrong: ' + JSON.stringify(pk.location));
   const giver = await page.evaluate(() => JSON.parse(localStorage.getItem('giveaway.giver')));
-  must(giver && giver.area === 'Bernal Heights' && giver.availability.length === 2, 'giver defaults not saved');
+  must(giver && giver.area.startsWith('Bernal Heights') && giver.availability.length === 2 && giver.location, 'giver defaults not saved');
   must((await page.evaluate(() => localStorage.getItem('giveaway.draft'))) === null, 'new-listing draft should be cleared after listing');
 
   // Edit the listing: change the title, keep pickup, save.
@@ -106,6 +124,7 @@ try {
   await page.getByRole('button', { name: 'Next: pickup' }).click();
   await page.locator('#pickup-form').waitFor();
   must((await page.inputValue('#p-address')) === '123 Example St', 'edit pickup not prefilled');
+  await page.locator('#area-map.leaflet-container').waitFor();
   await page.getByRole('button', { name: 'Next: review' }).click();
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.getByRole('heading', { name: 'Oak dining chair' }).waitFor();
@@ -129,14 +148,15 @@ try {
   await page.fill('#f-title', 'Desk lamp');
   await page.getByRole('button', { name: 'Next: pickup' }).click();
   await page.locator('#pickup-form').waitFor();
-  must((await page.inputValue('#p-area')) === 'Bernal Heights', 'area not prefilled from defaults');
+  must((await page.inputValue('#p-area')).startsWith('Bernal Heights'), 'area not prefilled from defaults');
+  await page.locator('#area-map.leaflet-container').waitFor();
   must((await page.inputValue('#p-address')) === '123 Example St', 'address not prefilled from defaults');
   must((await page.locator('.chip[aria-pressed="true"]').count()) === 2, 'availability not prefilled from defaults');
   await page.goto(BASE + '/#/');
   await page.locator('#resume-banner').waitFor();
   await page.getByRole('link', { name: 'Resume' }).click();
   await page.locator('#pickup-form').waitFor();
-  must((await page.inputValue('#p-area')) === 'Bernal Heights', 'resume lost pickup fields');
+  must((await page.inputValue('#p-area')).startsWith('Bernal Heights'), 'resume lost pickup fields');
   await page.goto(BASE + '/#/');
   await page.locator('#discard-draft').click();
   must((await page.locator('#resume-banner').count()) === 0, 'banner should disappear after discard');

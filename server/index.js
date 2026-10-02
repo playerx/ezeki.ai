@@ -101,6 +101,62 @@ app.post('/api/draft', async (req, res) => {
   }
 });
 
+// Area lookup for the pickup step. Proxies Nominatim (OpenStreetMap) so the
+// browser never talks to it directly; results are cached and upstream calls are
+// spaced to respect the one-request-per-second usage policy. Only the public
+// area is ever geocoded, never the private address.
+const geoCache = new Map();
+let geoChain = Promise.resolve();
+let lastGeoAt = 0;
+
+function shortLabel(r) {
+  const a = r.address || {};
+  const place = a.city || a.town || a.village || a.hamlet || a.county || '';
+  const state = a.state || '';
+  const name = r.type === 'postcode' || (a.postcode && r.name === a.postcode)
+    ? `${a.postcode || r.name} ${place}`.trim()
+    : (r.name || String(r.display_name || '').split(',')[0]);
+  const parts = [name];
+  if (place && place !== name && !name.endsWith(place)) parts.push(place);
+  if (state && state !== place) parts.push(state);
+  return parts.join(', ');
+}
+
+app.get('/api/geocode', async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  // Country bias: browser locale region first, else DEFAULT_COUNTRY (set per deployment).
+  const cc = (String(req.query.cc || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 2)) || (process.env.DEFAULT_COUNTRY || 'us');
+  if (q.length < 2) return res.json([]);
+  const key = `${cc}|${q.toLowerCase()}`;
+  const hit = geoCache.get(key);
+  if (hit && Date.now() - hit.at < 24 * 3600 * 1000) return res.json(hit.results);
+
+  const job = geoChain.then(async () => {
+    const wait = 1100 - (Date.now() - lastGeoAt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastGeoAt = Date.now();
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.search = new URLSearchParams({ format: 'jsonv2', q, limit: '5', addressdetails: '1', ...(cc ? { countrycodes: cc } : {}) }).toString();
+    const r = await fetch(url, { headers: { 'User-Agent': 'giveaway-mvp/0.1 (local dev)', 'Accept-Language': req.get('accept-language') || 'en' } });
+    if (!r.ok) throw new Error(`geocoder responded ${r.status}`);
+    const rows = await r.json();
+    const seen = new Set();
+    const results = rows
+      .map((x) => ({ label: shortLabel(x), lat: Number(x.lat), lon: Number(x.lon) }))
+      .filter((x) => !seen.has(x.label) && seen.add(x.label))
+      .slice(0, 4);
+    geoCache.set(key, { at: Date.now(), results });
+    return results;
+  });
+  geoChain = job.catch(() => {});
+  try {
+    res.json(await job);
+  } catch (err) {
+    console.error(err);
+    res.status(502).json({ error: 'Could not look up that area right now' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`API listening on http://localhost:${PORT} (env: ${APP_ENV}, ai: ${hasKey ? 'on' : 'off, no key set'})`);
 });

@@ -29,8 +29,8 @@ yourself.
 
 - `src/` - Vite frontend, plain JS, hash-routed. Listings live in `localStorage`.
 - `server/index.js` - Express API on port 3001. Holds the Claude key and
-  serves `POST /api/draft` (photos in, structured listing draft out) and
-  `GET /api/health`. Vite proxies `/api` to it.
+  serves `POST /api/draft` (photos in, structured listing draft out),
+  `GET /api/geocode` (area lookup) and `GET /api/health`. Vite proxies `/api` to it.
 - `tests/phase1.mjs` - Playwright walkthrough of photo -> draft -> edit -> post.
   Run with `npm test` while the dev servers are up.
 
@@ -47,9 +47,13 @@ remembered as giver defaults for the next listing.
 
 `pickup` is `{ area, address, availability, notes }`. `address` is never shown
 on the listing; it will be revealed to a recipient once a pickup is confirmed.
-`availability` is a list of slots like `mon-eve` or `sat-am`. The listing
-page links the area to an OpenStreetMap search; a proper map comes with the
-server phase.
+`availability` is a list of slots like `mon-eve` or `sat-am`. `location` is
+the geocoded centroid of the area (`{ lat, lon, label }`), set when the giver
+picks a suggestion; only the public area is ever geocoded, never the address.
+Maps are Leaflet with OpenStreetMap tiles and draw a wide circle around that
+centroid. Area lookup goes through `GET /api/geocode`, which proxies and
+caches Nominatim and biases results to the browser's locale country. Before
+real traffic, switch tiles and geocoding to a provider with a usage agreement.
 
 `price: null` means free; the MVP never sets a price. `status` is one of
 `listed`, `requested`, `accepted`, `completed`, `cancelled`. Later phases

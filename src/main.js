@@ -4,6 +4,7 @@ import {
   loadGiverDefaults, saveGiverDefaults, loadDraft, saveDraft, clearDraft,
 } from './store.js';
 import { fileToDataUrl, shrinkForStorage, dataUrlToApiImage } from './photos.js';
+import { renderAreaMap, osmLink, geocode } from './map.js';
 
 const CATEGORIES = ['furniture', 'kitchen', 'electronics', 'clothing', 'books', 'kids', 'garden', 'tools', 'sports', 'decor', 'other'];
 const CONDITIONS = ['like new', 'good', 'fair', 'worn'];
@@ -36,10 +37,6 @@ function slotLabel(slot) {
   const day = DAYS.find(([k]) => k === d)?.[1] ?? d;
   const part = PARTS.find(([k]) => k === p)?.[1]?.toLowerCase() ?? p;
   return `${day} ${part}`;
-}
-
-function mapUrl(area) {
-  return `https://www.openstreetmap.org/search?query=${encodeURIComponent(area)}`;
 }
 
 function pickupNotesOf(l) {
@@ -288,6 +285,7 @@ function renderPickupStep() {
       area: defaults.area || '',
       address: defaults.address || '',
       availability: Array.isArray(defaults.availability) ? [...defaults.availability] : [],
+      location: defaults.location || null,
       notes: (s.draft?.pickupHints || []).join('. '),
       remember: true,
     };
@@ -306,7 +304,14 @@ function renderPickupStep() {
   layout('Pickup', `
     <p class="muted">Where and when can someone collect it?</p>
     <form id="pickup-form" style="display:contents">
-      <div class="field"><label for="p-area">Area <span class="small">(shown on the listing)</span></label><input id="p-area" name="area" required maxlength="60" placeholder="Neighbourhood or postcode" value="${esc(p.area)}" /></div>
+      <div class="field">
+        <label for="p-area">Area <span class="small">(shown on the listing)</span></label>
+        <input id="p-area" name="area" required maxlength="80" autocomplete="off" placeholder="Neighbourhood or postcode" value="${esc(p.area)}" />
+        <div id="area-suggest" class="suggest"></div>
+        ${p.location
+          ? `<div id="area-map" class="map"></div><div class="hint">People see this rough circle, never your address.</div>`
+          : `<div class="hint">Type a neighbourhood or postcode and pick the match, so people can see the area on a map.</div>`}
+      </div>
       <div class="field"><label for="p-address">Pickup address <span class="small">(only shared once a pickup is confirmed)</span></label><input id="p-address" name="address" required maxlength="120" placeholder="Street address" value="${esc(p.address)}" /></div>
       <div class="field"><label>When are you usually around?</label>${grid}</div>
       <label class="check"><input type="checkbox" id="p-remember" ${p.remember ? 'checked' : ''} /> Remember area, address and availability for next time</label>
@@ -332,6 +337,36 @@ function renderPickupStep() {
     persistDraft();
   }));
   document.querySelector('#pickup-form').addEventListener('input', () => { capturePickupForm(); persistDraft(); });
+
+  // Area lookup: suggestions appear as you type; picking one pins the rough
+  // location. Editing the text afterwards unpins it until a new pick.
+  const areaInput = document.querySelector('#p-area');
+  const suggestEl = document.querySelector('#area-suggest');
+  let lookupTimer;
+  areaInput.addEventListener('input', () => {
+    const q = areaInput.value.trim();
+    if (p.location && q !== p.location.label) {
+      p.location = null;
+      document.querySelector('#area-map')?.remove();
+    }
+    clearTimeout(lookupTimer);
+    if (q.length < 3) { suggestEl.innerHTML = ''; return; }
+    lookupTimer = setTimeout(async () => {
+      const results = await geocode(q);
+      if (areaInput.value.trim() !== q) return; // stale
+      suggestEl.innerHTML = results.length
+        ? results.map((r, i) => `<button type="button" data-i="${i}">${esc(r.label)}</button>`).join('')
+        : `<div class="hint">No match found. You can still post with just the text.</div>`;
+      suggestEl.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+        const r = results[Number(b.dataset.i)];
+        capturePickupForm();
+        p.area = r.label;
+        p.location = { lat: r.lat, lon: r.lon, label: r.label };
+        renderFlow();
+      }));
+    }, 400);
+  });
+  if (p.location) renderAreaMap(document.querySelector('#area-map'), p.location);
 
   document.querySelector('#pickup-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -366,9 +401,10 @@ function renderReviewStep() {
         <a class="edit-link" href="#" data-goto="edit">Edit details</a>
         <div class="pickup">
           <div><strong>Pickup in ${esc(p.area)}</strong><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
+          ${p.location ? `<div id="review-map" class="map"></div>` : ''}
           <div class="chips">${p.availability.map((slot) => `<span class="tag">${esc(slotLabel(slot))}</span>`).join('')}</div>
           ${p.notes ? `<div class="notes">${esc(p.notes)}</div>` : ''}
-          <div class="private">Address, kept private: ${esc(p.address)}</div>
+          <div class="private">Address, private until a pickup is confirmed: ${esc(p.address)}</div>
           <a class="edit-link" href="#" data-goto="pickup">Edit pickup</a>
         </div>
       </div>
@@ -376,6 +412,8 @@ function renderReviewStep() {
     ${s.error ? `<div class="notice error">${esc(s.error)}</div>` : ''}
     <div class="sticky-actions"><button class="btn primary" id="post-btn">${editing ? 'Save changes' : 'List it'}</button></div>
   `, { back: () => { s.step = 'pickup'; renderFlow(); } });
+
+  if (p.location) renderAreaMap(document.querySelector('#review-map'), p.location);
 
   document.querySelectorAll('[data-goto]').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
@@ -395,14 +433,14 @@ function renderReviewStep() {
       const fields = {
         photos,
         ...s.details,
-        pickup: { area: p.area, address: p.address, availability: p.availability, notes: p.notes },
+        pickup: { area: p.area, address: p.address, availability: p.availability, notes: p.notes, location: p.location },
         price: null,
       };
       const listing = existing
         ? { ...existing, ...fields, updatedAt: new Date().toISOString() }
         : newListing({ ...fields, aiDraft: s.manual || s.serverStub ? null : s.draft });
       saveListing(listing);
-      if (p.remember) saveGiverDefaults({ area: p.area, address: p.address, availability: p.availability });
+      if (p.remember) saveGiverDefaults({ area: p.area, address: p.address, availability: p.availability, location: p.location });
       resetState(s);
       location.hash = `#/listing/${listing.id}`;
     } catch (err) {
@@ -419,7 +457,8 @@ function pickupBlock(l) {
   if (!p) return notes ? `<div><strong>Pickup:</strong> ${esc(notes)}</div>` : '';
   return `
     <div class="pickup">
-      <div><strong>Pickup in ${esc(p.area)}</strong> <a class="map-link" href="${mapUrl(p.area)}" target="_blank" rel="noopener">map</a><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
+      <div><strong>Pickup in ${esc(p.area)}</strong><br><span class="muted small">Exact address is shared once a pickup is confirmed.</span></div>
+      ${p.location ? `<div id="listing-map" class="map"></div><a class="map-link" href="${osmLink(p.location)}" target="_blank" rel="noopener">Open in OpenStreetMap</a>` : ''}
       <div class="chips">${p.availability.map((slot) => `<span class="tag">${esc(slotLabel(slot))}</span>`).join('')}</div>
       ${notes ? `<div class="notes">${esc(notes)}</div>` : ''}
     </div>`;
@@ -448,6 +487,8 @@ function renderListing(id) {
     </div>
     <a class="btn ghost" href="#/">Done</a>
   `, { back: '#/' });
+
+  if (l.pickup?.location) renderAreaMap(document.querySelector('#listing-map'), l.pickup.location);
 
   document.querySelector('#delete-btn').addEventListener('click', () => {
     if (!confirm('Remove this listing? This cannot be undone.')) return;
